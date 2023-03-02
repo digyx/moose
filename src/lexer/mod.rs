@@ -17,8 +17,30 @@ pub fn tokenize(input: &str) -> Vec<Token> {
 
 fn next_token(input: &mut Peekable<Chars>) -> Option<Token> {
     let tok = match input.next()? {
-        '=' => Token::Assign,
         '+' => Token::Plus,
+        '-' => Token::Minus,
+        '*' => Token::Asterisk,
+        '/' => Token::ForwardSlash,
+
+        '!' => {
+            if input.peek() == Some(&'=') {
+                input.next();
+                Token::NotEqual
+            } else {
+                Token::Bang
+            }
+        }
+        '=' => {
+            if input.peek() == Some(&'=') {
+                input.next();
+                Token::Equal
+            } else {
+                Token::Assign
+            }
+        }
+
+        '<' => Token::LessThan,
+        '>' => Token::GreaterThan,
 
         ',' => Token::Comma,
         ';' => Token::Semicolon,
@@ -56,8 +78,13 @@ fn read_ident(input: &mut Peekable<Chars>, first: char) -> Token {
     // Check if our ident is a keyword
     let ident = toks.iter().cloned().collect::<String>();
     match ident.as_str() {
+        "true" => Token::True,
+        "false" => Token::False,
         "fn" => Token::Function,
         "let" => Token::Let,
+        "if" => Token::If,
+        "else" => Token::Else,
+        "return" => Token::Return,
 
         ident => Token::Ident(ident.to_owned()),
     }
@@ -102,16 +129,68 @@ mod tests {
             Token::Semicolon,
         ])]
     #[case(
-        "
-    let five = 5;
-    let ten = 10;
+        "!-/*5; 5 < 10 > 5;",
+        vec![
+            Token::Bang,
+            Token::Minus,
+            Token::ForwardSlash,
+            Token::Asterisk,
+            Token::Int(5),
+            Token::Semicolon,
+            Token::Int(5),
+            Token::LessThan,
+            Token::Int(10),
+            Token::GreaterThan,
+            Token::Int(5),
+            Token::Semicolon,
+        ])]
+    #[case(
+        "5 != 6",
+        vec![
+            Token::Int(5),
+            Token::NotEqual,
+            Token::Int(6),
+    ])]
+    #[case(
+        "8 == 8",
+        vec![
+            Token::Int(8),
+            Token::Equal,
+            Token::Int(8),
+    ])]
+    #[case(
+        "if (5 < 7) {
+            return true
+        } else {
+            return false
+        }",
+        vec![
+            Token::If,
+            Token::LeftParenthesis,
+            Token::Int(5),
+            Token::LessThan,
+            Token::Int(7),
+            Token::RightParenthesis,
+            Token::LeftBrace,
+            Token::Return,
+            Token::True,
+            Token::RightBrace,
+            Token::Else,
+            Token::LeftBrace,
+            Token::Return,
+            Token::False,
+            Token::RightBrace
+        ])]
+    #[case(
+        "let five = 5;
+        let ten = 10;
 
-    let add = fn(x, y) {
-        x + y;
-    }
+        let add = fn(x, y) {
+            x + y;
+        }
 
-    let result = add(five, ten);
-    ",
+        let result = add(five, ten);
+        ",
         vec![
             Token::Let,
             Token::Ident("five".into()),

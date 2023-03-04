@@ -1,27 +1,36 @@
+mod error;
 mod tokens;
 
 use std::{iter::Peekable, str::Chars};
 
-use tokens::Token;
+pub use error::LexerError;
+pub use tokens::{InfixOperator, Keyword, PrefixOperator, Term, Token, Tokens};
 
-pub fn tokenize(input: &str) -> Vec<Token> {
+pub fn tokenize(input: &str) -> Result<Tokens, LexerError> {
     let mut input = input.chars().into_iter().peekable();
 
-    let mut toks = Vec::new();
-    while let Some(tok) = next_token(&mut input) {
-        toks.push(tok)
+    let mut tokens = Vec::new();
+    while let Some(tok) = next_token(&mut input)? {
+        tokens.push(tok)
     }
 
-    toks
+    Ok(tokens.into_iter().peekable())
 }
 
-fn next_token(input: &mut Peekable<Chars>) -> Option<Token> {
-    let tok = match input.next()? {
+fn next_token(input: &mut Peekable<Chars>) -> Result<Option<Token>, LexerError> {
+    let tok = match input.next() {
+        Some(tok) => tok,
+        None => return Ok(None),
+    };
+
+    let tok = match tok {
         '+' => Token::Plus,
         '-' => Token::Minus,
         '*' => Token::Asterisk,
         '/' => Token::ForwardSlash,
 
+        // We increment the token count for each of these if they match
+        // their duo since the duo takes up characters
         '!' => {
             if input.peek() == Some(&'=') {
                 input.next();
@@ -39,14 +48,29 @@ fn next_token(input: &mut Peekable<Chars>) -> Option<Token> {
             }
         }
 
-        '<' => Token::LessThan,
-        '>' => Token::GreaterThan,
+        '<' => {
+            if input.peek() == Some(&'=') {
+                input.next();
+                Token::LessThanEqual
+            } else {
+                Token::LessThan
+            }
+        }
+        '>' => {
+            if input.peek() == Some(&'=') {
+                input.next();
+                Token::GreaterThanEqual
+            } else {
+                Token::GreaterThan
+            }
+        }
 
         ',' => Token::Comma,
         ';' => Token::Semicolon,
 
         '(' => Token::LeftParenthesis,
         ')' => Token::RightParenthesis,
+
         '{' => Token::LeftBrace,
         '}' => Token::RightBrace,
 
@@ -55,12 +79,15 @@ fn next_token(input: &mut Peekable<Chars>) -> Option<Token> {
         tok if tok.is_ascii_digit() => read_int(input, tok),
 
         // Skip whitespace
-        tok if tok.is_ascii_whitespace() => next_token(input)?,
+        tok if tok.is_ascii_whitespace() => match next_token(input)? {
+            Some(tok) => tok,
+            None => return Ok(None),
+        },
 
-        _ => Token::Illegal,
+        _ => return Err(LexerError::IllegalToken),
     };
 
-    Some(tok)
+    Ok(Some(tok))
 }
 
 fn read_ident(input: &mut Peekable<Chars>, first: char) -> Token {
@@ -78,14 +105,14 @@ fn read_ident(input: &mut Peekable<Chars>, first: char) -> Token {
     // Check if our ident is a keyword
     let ident = toks.iter().cloned().collect::<String>();
     match ident.as_str() {
-        "true" => Token::True,
-        "false" => Token::False,
         "fn" => Token::Function,
         "let" => Token::Let,
         "if" => Token::If,
         "else" => Token::Else,
         "return" => Token::Return,
 
+        "true" => Token::True,
+        "false" => Token::False,
         ident => Token::Ident(ident.to_owned()),
     }
 }
@@ -107,6 +134,7 @@ fn read_int(input: &mut Peekable<Chars>, first: char) -> Token {
         .collect::<String>()
         .parse::<i64>()
         .unwrap();
+
     Token::Int(int)
 }
 
@@ -228,8 +256,8 @@ mod tests {
             Token::RightParenthesis,
             Token::Semicolon,
         ])]
-    fn test_next_token(#[case] input: &str, #[case] expected: Vec<Token>) {
-        let res = tokenize(input);
-        assert_eq!(res, expected);
+    fn test_lexer(#[case] input: &str, #[case] expected: Vec<Token>) {
+        let res = tokenize(input).unwrap();
+        assert_eq!(res.collect::<Vec<Token>>(), expected);
     }
 }

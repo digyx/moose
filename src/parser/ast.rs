@@ -82,6 +82,11 @@ pub enum Expression {
         consequence: Box<Node>,
         alternative: Option<Box<Node>>,
     },
+
+    Function {
+        parameters: Vec<String>,
+        body: Box<Node>,
+    },
 }
 
 impl Expression {
@@ -150,6 +155,10 @@ impl Display for Expression {
                     None => "N/A".to_string(),
                 }
             ),
+
+            Expression::Function { parameters, body } => {
+                write!(f, "fn({}) {}", parameters.join(", "), body)
+            }
         }
     }
 }

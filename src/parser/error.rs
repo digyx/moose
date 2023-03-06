@@ -10,6 +10,7 @@ pub enum ParserError {
     ExpectedBoolean,
     ExpectedNumeric,
     ExpectedBlock,
+    ExpectedLeftParenthesis,
     ExpectedRightParenthesis,
 }
 
@@ -24,6 +25,7 @@ impl Display for ParserError {
             ParserError::ExpectedBoolean => write!(f, "expected boolean expression"),
             ParserError::ExpectedNumeric => write!(f, "expected numeric expression"),
             ParserError::ExpectedBlock => write!(f, "expected block"),
+            ParserError::ExpectedLeftParenthesis => write!(f, "expected left parenthesis"),
             ParserError::ExpectedRightParenthesis => write!(f, "expected right parenthesis"),
         }
     }

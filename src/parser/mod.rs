@@ -45,7 +45,6 @@ fn next_node(tokens: &mut Tokens) -> Option<Result<Node, ParserError>> {
             match keyword {
                 Keyword::Let => parse_let_statement(tokens),
                 Keyword::Return => parse_return_statement(tokens),
-                _ => panic!("not implemented"),
             }
         }
 
@@ -237,16 +236,21 @@ fn parse_prefix_operator(
             _ => return Err(ParserError::ExpectedNumeric),
         },
 
-        // It feels weird that 'if' is a prefix operator, but it is.  If operators on the expression
-        // by converting the expressions output into something different.
+        // It feels weird that 'if' is a prefix operator, but it is.  If operators on the
+        // expression by converting the expressions output into something different.
         PrefixOperator::If => {
             let condition = parse_expression(tokens, Precedence::Lowest)?;
+
+            // Conditions in if statements must evaluate to booleans
+            if !condition.is_bool() {
+                return Err(ParserError::ExpectedBoolean);
+            }
+
             let consequence = parse_block_statement(tokens)?;
 
             let alternative = if tokens.peek() == Some(&Token::Else) {
                 // Eat else
                 tokens.next();
-
                 Some(Box::new(parse_block_statement(tokens)?))
             } else {
                 None
@@ -256,6 +260,48 @@ fn parse_prefix_operator(
                 condition: Box::new(condition),
                 consequence: Box::new(consequence),
                 alternative,
+            }
+        }
+
+        // Once again, strange to think of it as such, but definitely is a prefix operator.
+        // We're not quite at LISP levels of "everything is an expression!!" but we're not
+        // that far away
+        PrefixOperator::Function => {
+            if Some(Token::LeftParenthesis) != tokens.next() {
+                return Err(ParserError::ExpectedLeftParenthesis);
+            }
+
+            let mut parameters = Vec::new();
+            // Because of how we're looping, `fn(x,,,,y)` is completely valid and will parse
+            // to Expression::Function{ parameters: ["x", "y"], body: ... } which is fine but
+            // technically different than the Monkey spec.  We could fix this by simply checking
+            // if the next token after each comma is an identifier
+            loop {
+                let ident = match tokens.next() {
+                    Some(Token::Ident(ident)) => ident,
+                    Some(Token::Comma) => continue,
+                    Some(Token::RightParenthesis) => break,
+
+                    // Unexpected tokens
+                    Some(tok) => {
+                        return Err(ParserError::UnexpectedToken(
+                            "identifier, comma, or right parenthesis",
+                            tok,
+                        ))
+                    }
+
+                    // Unexpected EOF
+                    None => return Err(ParserError::EOF),
+                };
+
+                parameters.push(ident);
+            }
+
+            let body = parse_block_statement(tokens)?;
+
+            Expression::Function {
+                parameters,
+                body: Box::new(body),
             }
         }
     };
@@ -364,6 +410,16 @@ mod tests {
     #[case("if x > y { x }", "if (x > y) then { x } else N/A")]
     #[case("if x > y { x } else { y }", "if (x > y) then { x } else { y }")]
     fn test_if_expression(#[case] input: &str, #[case] expected: &str) {
+        let mut tokens = lexer::tokenize(input).unwrap();
+        let res = parse_expression(&mut tokens, Precedence::Lowest).unwrap();
+        assert_eq!(&res.to_string(), expected);
+    }
+
+    #[rstest]
+    #[case("fn() {true}", "fn() { true }")]
+    #[case("fn(x) {x + 3}", "fn(x) { (x + 3) }")]
+    #[case("fn(x, y) {x + y}", "fn(x, y) { (x + y) }")]
+    fn test_function_expression(#[case] input: &str, #[case] expected: &str) {
         let mut tokens = lexer::tokenize(input).unwrap();
         let res = parse_expression(&mut tokens, Precedence::Lowest).unwrap();
         assert_eq!(&res.to_string(), expected);

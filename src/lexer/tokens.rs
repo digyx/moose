@@ -92,6 +92,7 @@ pub enum PrefixOperator {
     Bang,
     Minus,
     If,
+    Function,
 }
 
 impl TryFrom<&Token> for PrefixOperator {
@@ -102,6 +103,7 @@ impl TryFrom<&Token> for PrefixOperator {
             Token::Bang => Self::Bang,
             Token::Minus => Self::Minus,
             Token::If => Self::If,
+            Token::Function => Self::Function,
 
             _ => return Err(LexerError::InvalidToken),
         };
@@ -166,7 +168,6 @@ impl TryFrom<&Token> for InfixOperator {
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
 pub enum Keyword {
     Let,
-    Function,
     Return,
 }
 
@@ -182,7 +183,6 @@ impl TryFrom<&Token> for Keyword {
     fn try_from(token: &Token) -> Result<Self, Self::Error> {
         let term = match token {
             Token::Let => Self::Let,
-            Token::Function => Self::Function,
             Token::Return => Self::Return,
 
             _ => return Err(LexerError::InvalidToken),

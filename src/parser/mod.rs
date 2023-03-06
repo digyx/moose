@@ -161,6 +161,7 @@ fn parse_expression(
             None
             | Some(Token::RightParenthesis)
             | Some(Token::Semicolon)
+            | Some(Token::Comma) // Break used when parsing function arguments
             | Some(Token::LeftBrace) // Break used for if statements
             | Some(Token::RightBrace) => break,
             _ => (),
@@ -315,6 +316,39 @@ fn parse_infix_operator(
     lhs: Expression,
 ) -> Result<Expression, ParserError> {
     let lhs = Box::new(lhs);
+
+    // Call operators are parsed weirdly
+    if InfixOperator::Call == operator {
+        let mut args = Vec::new();
+        loop {
+            match tokens.peek() {
+                Some(Token::Comma) => {
+                    tokens.next();
+                    continue;
+                }
+                Some(Token::RightParenthesis) => {
+                    tokens.next();
+                    break;
+                }
+
+                // Parse expressions
+                Some(_) => {
+                    let arg = parse_expression(tokens, Precedence::Lowest)?;
+                    args.push(arg);
+                    continue;
+                }
+
+                // Unexpected EOF
+                None => return Err(ParserError::EOF),
+            };
+        }
+
+        return Ok(Expression::Call {
+            function: lhs,
+            args,
+        });
+    };
+
     let rhs = Box::new(parse_expression(tokens, get_prescedence(&operator))?);
 
     let expr = match operator {
@@ -331,6 +365,8 @@ fn parse_infix_operator(
         InfixOperator::LessThan => Expression::LessThan(lhs, rhs),
         InfixOperator::GreaterThanEqual => Expression::GreaterThanEqual(lhs, rhs),
         InfixOperator::LessThanEqual => Expression::LessThanEqual(lhs, rhs),
+
+        InfixOperator::Call => panic!("unreachable"),
     };
 
     Ok(expr)
@@ -420,6 +456,17 @@ mod tests {
     #[case("fn(x) {x + 3}", "fn(x) { (x + 3) }")]
     #[case("fn(x, y) {x + y}", "fn(x, y) { (x + y) }")]
     fn test_function_expression(#[case] input: &str, #[case] expected: &str) {
+        let mut tokens = lexer::tokenize(input).unwrap();
+        let res = parse_expression(&mut tokens, Precedence::Lowest).unwrap();
+        assert_eq!(&res.to_string(), expected);
+    }
+
+    #[rstest]
+    #[case("add(2, 3)", "add(2, 3)")]
+    #[case("add(1 + 2, 3)", "add((1 + 2), 3)")]
+    #[case("add(x, y)", "add(x, y)")]
+    #[case("fn(x,y) { x + y }(1,2)", "fn(x, y) { (x + y) }(1, 2)")]
+    fn test_call_expression(#[case] input: &str, #[case] expected: &str) {
         let mut tokens = lexer::tokenize(input).unwrap();
         let res = parse_expression(&mut tokens, Precedence::Lowest).unwrap();
         assert_eq!(&res.to_string(), expected);

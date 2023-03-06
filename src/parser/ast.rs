@@ -85,7 +85,12 @@ pub enum Expression {
 
     Function {
         parameters: Vec<String>,
-        body: Box<Node>,
+        body: Box<Node>, // block statement
+    },
+
+    Call {
+        function: Box<Expression>, // ident or function
+        args: Vec<Expression>,
     },
 }
 
@@ -159,6 +164,16 @@ impl Display for Expression {
             Expression::Function { parameters, body } => {
                 write!(f, "fn({}) {}", parameters.join(", "), body)
             }
+
+            Expression::Call { function, args } => write!(
+                f,
+                "{}({})",
+                function,
+                args.iter()
+                    .map(|expr| expr.to_string())
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
         }
     }
 }

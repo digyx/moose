@@ -132,6 +132,8 @@ pub enum InfixOperator {
     GreaterThan,
     LessThanEqual,
     GreaterThanEqual,
+
+    Call,
 }
 
 impl InfixOperator {
@@ -156,6 +158,8 @@ impl TryFrom<&Token> for InfixOperator {
             Token::LessThanEqual => Self::LessThanEqual,
             Token::GreaterThan => Self::GreaterThan,
             Token::GreaterThanEqual => Self::GreaterThanEqual,
+
+            Token::LeftParenthesis => Self::Call,
 
             _ => return Err(LexerError::InvalidToken),
         };

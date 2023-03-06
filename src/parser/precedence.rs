@@ -8,7 +8,7 @@ pub enum Precedence {
     Sum,
     Product,
     Prefix,
-    // Call,
+    Call,
 }
 
 pub(super) fn get_prescedence(tok: &InfixOperator) -> Precedence {
@@ -26,5 +26,7 @@ pub(super) fn get_prescedence(tok: &InfixOperator) -> Precedence {
 
         InfixOperator::Asterisk => Precedence::Product,
         InfixOperator::ForwardSlash => Precedence::Product,
+
+        InfixOperator::Call => Precedence::Call,
     }
 }

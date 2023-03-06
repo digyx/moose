@@ -1,6 +1,7 @@
 use std::fmt::Display;
 
 // Program
+#[derive(Debug)]
 pub struct Program(Vec<Node>);
 
 impl Program {

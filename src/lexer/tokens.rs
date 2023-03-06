@@ -1,9 +1,13 @@
-use std::{iter::Peekable, vec::IntoIter};
+use std::iter::Peekable;
+use std::vec::IntoIter;
 
 use super::LexerError;
 
 pub type Tokens = Peekable<IntoIter<Token>>;
 
+/// Each token is made up of various subtypes, such as Term, PrefixOperator, and
+/// Keyword.  These are used to ensure that all patterns of a specific token are
+/// handled during the parsing phase.
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
 pub enum Token {
     Assign,

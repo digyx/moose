@@ -9,9 +9,15 @@ pub use error::ParserError;
 
 use self::precedence::{get_prescedence, Precedence};
 
+// Entrypoint
 pub fn parse(tokens: Tokens) -> Program {
+    // Redefine tokens are mutable so it can be used as an iterator
     let mut tokens = tokens;
+
+    // Our AST is defined as a vector of statements
     let mut ast = Vec::new();
+
+    // next_node return None on an EOF, so we know to end then
     while let Some(node) = next_node(&mut tokens) {
         match node {
             Ok(node) => ast.push(node),
@@ -23,10 +29,18 @@ pub fn parse(tokens: Tokens) -> Program {
     Program::new(ast)
 }
 
-fn next_node<'a>(tokens: &mut Tokens) -> Option<Result<Node, ParserError>> {
+// Get the next statement of our program
+fn next_node(tokens: &mut Tokens) -> Option<Result<Node, ParserError>> {
+    // We return None on an EOF
     let node = match tokens.peek()? {
+        // This check and coerceis a common pattern in this module
+        //
+        // I don't know of a way to convert the token at the same time
+        // as checking its type.  I'd love to find a better way
         tok if Keyword::is(tok) => {
             let keyword = Keyword::try_from(tok).unwrap();
+            // Eat the keyword
+            tokens.next();
 
             match keyword {
                 Keyword::Let => parse_let_statement(tokens),
@@ -43,7 +57,7 @@ fn next_node<'a>(tokens: &mut Tokens) -> Option<Result<Node, ParserError>> {
         Token::LeftBrace => parse_block_statement(tokens),
 
         Token::Semicolon => {
-            // Eat ;
+            // Eat the Semicolon token
             tokens.next();
             next_node(tokens)?
         }
@@ -56,9 +70,6 @@ fn next_node<'a>(tokens: &mut Tokens) -> Option<Result<Node, ParserError>> {
 
 // Statement parsing
 fn parse_let_statement(tokens: &mut Tokens) -> Result<Node, ParserError> {
-    // Get rid of `let`
-    tokens.next();
-
     let ident = match tokens.next() {
         Some(Token::Ident(ident)) => ident,
         Some(tok) => return Err(ParserError::UnexpectedToken("identifier", tok)),
@@ -71,21 +82,19 @@ fn parse_let_statement(tokens: &mut Tokens) -> Result<Node, ParserError> {
         _ => {}
     }
 
-    let val = parse_expression(tokens, None, Precedence::Lowest)?;
+    // Get the value of the identifier
+    let val = parse_expression(tokens, Precedence::Lowest)?;
 
     Ok(Node::Let(ident, val))
 }
 
 fn parse_return_statement(tokens: &mut Tokens) -> Result<Node, ParserError> {
-    // Get rid of `return`
-    tokens.next();
-
-    let val = parse_expression(tokens, None, Precedence::Lowest)?;
+    let val = parse_expression(tokens, Precedence::Lowest)?;
     Ok(Node::Return(val))
 }
 
 fn parse_expression_statement(tokens: &mut Tokens) -> Result<Node, ParserError> {
-    let val = parse_expression(tokens, None, Precedence::Lowest)?;
+    let val = parse_expression(tokens, Precedence::Lowest)?;
     Ok(Node::Expression(val))
 }
 
@@ -112,76 +121,86 @@ fn parse_block_statement(tokens: &mut Tokens) -> Result<Node, ParserError> {
 }
 
 // Expression parsing
+//
+// Implemented via Pratt Parsing
 fn parse_expression(
     tokens: &mut Tokens,
-    lhs: Option<Expression>,
     precedence: Precedence,
 ) -> Result<Expression, ParserError> {
-    // If LHS exists, then unwrap it.  Otherwise, parse the next token to determine what LHS is
-    let lhs = match lhs {
-        Some(lhs) => lhs,
-        None => match tokens.next() {
-            // Prefix operators
-            Some(operator) if PrefixOperator::is(&operator) => {
-                parse_prefix_operator(tokens, PrefixOperator::try_from(&operator).unwrap())?
+    // Parse the expression to get the LHS of our expression
+    let mut lhs = match tokens.next() {
+        // Prefix operators
+        Some(operator) if PrefixOperator::is(&operator) => {
+            parse_prefix_operator(tokens, PrefixOperator::try_from(&operator).unwrap())?
+        }
+
+        // Grouped expressions
+        Some(Token::LeftParenthesis) => {
+            let res = parse_expression(tokens, Precedence::Lowest)?;
+
+            if tokens.next() != Some(Token::RightParenthesis) {
+                return Err(ParserError::ExpectedRightParenthesis);
             }
 
-            // Grouped expressions
-            Some(Token::LeftParenthesis) => {
-                let res = parse_expression(tokens, None, Precedence::Lowest)?;
+            res
+        }
 
-                if tokens.next() != Some(Token::RightParenthesis) {
-                    return Err(ParserError::ExpectedRightParenthesis);
-                }
+        // Singular terms such as integers
+        Some(term) if Term::is(&term) => parse_term(term.try_into().unwrap())?,
 
-                res
-            }
+        // We expect one of the above tokens to indicate that this is a valid expression
+        Some(_) => return Err(ParserError::ExpectedExpression),
 
-            // Parse terms
-            Some(term) if Term::is(&term) => parse_term(term.try_into().unwrap())?,
+        // We do not expect the end of the file at this point
+        None => return Err(ParserError::EOF),
+    };
 
-            Some(_) => return Err(ParserError::ExpectedExpression),
+    // Parse the infix with our LHS
+    loop {
+        // Break the loop on terminators
+        match tokens.peek() {
+            None
+            | Some(Token::RightParenthesis)
+            | Some(Token::Semicolon)
+            | Some(Token::LeftBrace) // Break used for if statements
+            | Some(Token::RightBrace) => break,
+            _ => (),
+        };
+
+        // Ensure next token is an infix operator
+        let operator = match tokens.peek() {
+            Some(tok) if InfixOperator::is(tok) => InfixOperator::try_from(tok).unwrap(),
+            Some(tok) => return Err(ParserError::UnexpectedToken("infix operator", tok.clone())),
             None => return Err(ParserError::EOF),
-        },
-    };
+        };
 
-    let expr = match tokens.peek() {
-        None
-        | Some(Token::RightParenthesis)
-        | Some(Token::LeftBrace)
-        | Some(Token::RightBrace)
-        | Some(Token::Semicolon) => return Ok(lhs),
+        // Break if the current precedence is stronger than the lower precedence.
+        //
+        // Matklad has a great in-depth explanation
+        // https://matklad.github.io/2020/04/13/simple-but-powerful-pratt-parsing.html#From-Precedence-to-Binding-Power
+        //
+        // Here's my summary (but go read his article; he writes great stuff)
+        //
+        // Instead of precedence, think of it as binding power.  If we look at (1 + 2 * 3 + 4), we evaluate 1 as the root and then see
+        // that + is the infix operator with a binding power of 4, which is greater than 1 (our base precedence).  Parsing this, we
+        // head down to our infix expression which is (1 + stuff).  When parsing stuff, we pass in 4 as our precedence.  The new expression
+        // (2 * 3 + 4) has * as the first infix operator.  It has a binding power of 5, so we continue with (2 * stuff), passing 5 as our
+        // precedence.  When parsing (3 + 4), we see + is our operator.  Now, + has a binding power of 4, which is lower than *'s of 5.  We
+        // return the current expression of 4 as our RHS.  Now we have a precedence of 4 with the lhs being (2 * 3).  Since we want to
+        // be left-hand heavy to keep associativity (is. 1 - 2 - 3 should be ((1 - 2) - 3) instead of (1 - (2 - 3))), we return here.  Now our
+        // lhs is (1 + (2 * 3)) with a precedence of 1, our base.  Parsing the final infix operator, we get ((1 + (2 * 3)) + 4).
+        if precedence >= get_prescedence(&operator) {
+            break;
+        }
 
-        Some(tok) => match tok {
-            // Infix Operator
-            tok if InfixOperator::is(tok) => {
-                let operator = InfixOperator::try_from(tok).unwrap();
-                if precedence >= get_prescedence(&operator) {
-                    return Ok(lhs);
-                }
+        // Eat operator
+        tokens.next();
 
-                parse_infix_operator(tokens, lhs)?
-            }
+        // Parse rest of the expression
+        lhs = parse_infix_operator(tokens, operator, lhs)?;
+    }
 
-            // Prefix Operator
-            // Since `-` is a prefix and infix operator, we give way to InfixOperator::Minus first
-            tok if PrefixOperator::is(tok) => {
-                let operator = tok.try_into().unwrap();
-                parse_prefix_operator(tokens, operator)?
-            }
-
-            // Term
-            tok if Term::is(tok) => {
-                let term = tok.clone().try_into().unwrap();
-                parse_term(term)?
-            }
-
-            // Invalid tokens
-            _ => return Err(ParserError::ExpectedExpression),
-        },
-    };
-
-    parse_expression(tokens, Some(expr), precedence)
+    Ok(lhs)
 }
 
 fn parse_term(token: Term) -> Result<Expression, ParserError> {
@@ -204,13 +223,13 @@ fn parse_prefix_operator(
 ) -> Result<Expression, ParserError> {
     let expr = match operator {
         // Not
-        PrefixOperator::Bang => match parse_expression(tokens, None, Precedence::Prefix)? {
+        PrefixOperator::Bang => match parse_expression(tokens, Precedence::Prefix)? {
             expr if expr.is_bool() => Expression::Not(Box::new(expr)),
             _ => return Err(ParserError::ExpectedBoolean),
         },
 
         // Negative
-        PrefixOperator::Minus => match parse_expression(tokens, None, Precedence::Prefix)? {
+        PrefixOperator::Minus => match parse_expression(tokens, Precedence::Prefix)? {
             expr if expr.is_numeric() => {
                 let val = Box::new(expr);
                 Expression::Negative(val)
@@ -218,8 +237,10 @@ fn parse_prefix_operator(
             _ => return Err(ParserError::ExpectedNumeric),
         },
 
+        // It feels weird that 'if' is a prefix operator, but it is.  If operators on the expression
+        // by converting the expressions output into something different.
         PrefixOperator::If => {
-            let condition = parse_expression(tokens, None, Precedence::Lowest)?;
+            let condition = parse_expression(tokens, Precedence::Lowest)?;
             let consequence = parse_block_statement(tokens)?;
 
             let alternative = if tokens.peek() == Some(&Token::Else) {
@@ -242,20 +263,15 @@ fn parse_prefix_operator(
     Ok(expr)
 }
 
-fn parse_infix_operator(tokens: &mut Tokens, lhs: Expression) -> Result<Expression, ParserError> {
-    let operator = match tokens.next() {
-        Some(operator) if InfixOperator::is(&operator) => {
-            InfixOperator::try_from(&operator).unwrap()
-        }
-        Some(tok) => return Err(ParserError::UnexpectedToken("infix operator", tok)),
-        None => return Err(ParserError::EOF),
-    };
-
+fn parse_infix_operator(
+    tokens: &mut Tokens,
+    operator: InfixOperator,
+    lhs: Expression,
+) -> Result<Expression, ParserError> {
     let lhs = Box::new(lhs);
-    let rhs = parse_expression(tokens, None, get_prescedence(&operator))?;
-    let rhs = Box::new(rhs);
+    let rhs = Box::new(parse_expression(tokens, get_prescedence(&operator))?);
 
-    let res = match operator {
+    let expr = match operator {
         InfixOperator::Plus => Expression::Add(lhs, rhs),
         InfixOperator::Minus => Expression::Subtract(lhs, rhs),
 
@@ -271,7 +287,7 @@ fn parse_infix_operator(tokens: &mut Tokens, lhs: Expression) -> Result<Expressi
         InfixOperator::LessThanEqual => Expression::LessThanEqual(lhs, rhs),
     };
 
-    Ok(res)
+    Ok(expr)
 }
 
 #[cfg(test)]
@@ -338,7 +354,8 @@ mod tests {
     #[case("(5 + 5) * 2", "((5 + 5) * 2)")]
     fn test_parse_expression(#[case] input: &str, #[case] expected: &str) {
         let mut tokens = lexer::tokenize(input).unwrap();
-        let res = parse_expression(&mut tokens, None, Precedence::Lowest).unwrap();
+        let res = parse_expression(&mut tokens, Precedence::Lowest).unwrap();
+        dbg!(&res);
         assert_eq!(&res.to_string(), expected);
     }
 
@@ -348,7 +365,7 @@ mod tests {
     #[case("if x > y { x } else { y }", "if (x > y) then { x } else { y }")]
     fn test_if_expression(#[case] input: &str, #[case] expected: &str) {
         let mut tokens = lexer::tokenize(input).unwrap();
-        let res = parse_expression(&mut tokens, None, Precedence::Lowest).unwrap();
+        let res = parse_expression(&mut tokens, Precedence::Lowest).unwrap();
         assert_eq!(&res.to_string(), expected);
     }
 }

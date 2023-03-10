@@ -6,6 +6,7 @@ description = "Oxidized interpretor for the monkey programming language"
 edition = "2021"
 
 [dependencies]
+anyhow = "1.0.69"
 clap = { version = "4.1.8", features = ["derive"] }
 
 [dev-dependencies]

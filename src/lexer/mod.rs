@@ -48,22 +48,8 @@ fn next_token(input: &mut Peekable<Chars>) -> Result<Option<Token>, LexerError> 
             }
         }
 
-        '<' => {
-            if input.peek() == Some(&'=') {
-                input.next();
-                Token::LessThanEqual
-            } else {
-                Token::LessThan
-            }
-        }
-        '>' => {
-            if input.peek() == Some(&'=') {
-                input.next();
-                Token::GreaterThanEqual
-            } else {
-                Token::GreaterThan
-            }
-        }
+        '<' => Token::LessThan,
+        '>' => Token::GreaterThan,
 
         ',' => Token::Comma,
         ';' => Token::Semicolon,

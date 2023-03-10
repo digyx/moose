@@ -10,7 +10,7 @@ pub use error::ParserError;
 use self::precedence::{get_prescedence, Precedence};
 
 // Entrypoint
-pub fn parse(tokens: Tokens) -> Program {
+pub fn parse(tokens: Tokens) -> Result<Program, ParserError> {
     // Redefine tokens are mutable so it can be used as an iterator
     let mut tokens = tokens;
 
@@ -19,14 +19,10 @@ pub fn parse(tokens: Tokens) -> Program {
 
     // next_node return None on an EOF, so we know to end then
     while let Some(node) = next_node(&mut tokens) {
-        match node {
-            Ok(node) => ast.push(node),
-            // TODO: Handle this more gracefully than a panic
-            Err(err) => panic!("{}", err),
-        }
+        ast.push(node?)
     }
 
-    Program::new(ast)
+    Ok(Program::new(ast))
 }
 
 // Get the next statement of our program
@@ -56,10 +52,12 @@ fn next_node(tokens: &mut Tokens) -> Option<Result<Node, ParserError>> {
         Token::LeftBrace => parse_block_statement(tokens),
 
         Token::Semicolon => {
-            // Eat the Semicolon token
+            // Eat the token
             tokens.next();
             next_node(tokens)?
         }
+
+        Token::RightBrace => return None,
 
         tok => panic!("not implemented: {:?}", tok),
     };
@@ -105,11 +103,11 @@ fn parse_block_statement(tokens: &mut Tokens) -> Result<Node, ParserError> {
         return Err(ParserError::ExpectedBlock);
     };
 
-    while tokens.peek() != Some(&Token::RightBrace) {
+    while tokens.peek().ok_or(ParserError::EOF)? != &Token::RightBrace {
         match next_node(tokens) {
             Some(Ok(stmt)) => statements.push(stmt),
             Some(Err(err)) => return Err(err),
-            None => return Err(ParserError::EOF),
+            None => break,
         }
     }
 
@@ -224,6 +222,8 @@ fn parse_prefix_operator(
     let expr = match operator {
         // Not
         PrefixOperator::Bang => match parse_expression(tokens, Precedence::Prefix)? {
+            // TODO:  Technically monkey uses truthy values, so this
+            // should not actually exist...but it does for now
             expr if expr.is_bool() => Expression::Not(Box::new(expr)),
             _ => return Err(ParserError::ExpectedBoolean),
         },
@@ -243,6 +243,8 @@ fn parse_prefix_operator(
             let condition = parse_expression(tokens, Precedence::Lowest)?;
 
             // Conditions in if statements must evaluate to booleans
+            // TODO:  Technically monkey uses truthy values, so this
+            // should not actually exist...but it does for now
             if !condition.is_bool() {
                 return Err(ParserError::ExpectedBoolean);
             }
@@ -254,6 +256,7 @@ fn parse_prefix_operator(
                 tokens.next();
                 Some(Box::new(parse_block_statement(tokens)?))
             } else {
+                dbg!(tokens.peek());
                 None
             };
 
@@ -363,8 +366,6 @@ fn parse_infix_operator(
 
         InfixOperator::GreaterThan => Expression::GreaterThan(lhs, rhs),
         InfixOperator::LessThan => Expression::LessThan(lhs, rhs),
-        InfixOperator::GreaterThanEqual => Expression::GreaterThanEqual(lhs, rhs),
-        InfixOperator::LessThanEqual => Expression::LessThanEqual(lhs, rhs),
 
         InfixOperator::Call => panic!("unreachable"),
     };
@@ -378,6 +379,17 @@ mod tests {
     use crate::lexer;
     use rstest::rstest;
 
+    // General test function used for parsing expressions
+    //
+    // Useful when splitting tests up into groups rather than making a massive block of cases
+    // via rstest for semi-related functionality such as testing term parsing and if
+    // expression parsing
+    fn expression_test(input: &str, expected: &str) {
+        let mut tokens = lexer::tokenize(input).unwrap();
+        let res = parse_expression(&mut tokens, Precedence::Lowest).unwrap();
+        assert_eq!(&res.to_string(), expected);
+    }
+
     #[rstest]
     #[case("let int = 5", "let int be 5")]
     #[case("return 7", "returning 7")]
@@ -385,9 +397,9 @@ mod tests {
     #[case("return 5 + 6", "returning (5 + 6)")]
     #[case("5 + 6; 7+3", "(5 + 6)\n(7 + 3)")]
     #[case("(5 + 5) * 3; 2 + 2", "((5 + 5) * 3)\n(2 + 2)")]
-    fn test_parser<'a>(#[case] input: &str, #[case] expected: &str) {
+    fn parse_success(#[case] input: &str, #[case] expected: &str) {
         let tokens = lexer::tokenize(input).unwrap();
-        let res = parse(tokens);
+        let res = parse(tokens).unwrap();
 
         assert_eq!(&res.to_string(), expected);
     }
@@ -397,22 +409,32 @@ mod tests {
     #[case("return")]
     #[case("let = 8")]
     #[should_panic]
-    fn test_parser_failure(#[case] input: &str) {
+    fn parse_failure(#[case] input: &str) {
         let tokens = lexer::tokenize(input).unwrap();
-        parse(tokens);
+        parse(tokens).unwrap();
     }
 
-    #[rstest]
     // Terms
+    #[rstest]
     #[case("5", "5")]
     #[case("uwu", "uwu")]
     #[case("true", "true")]
     #[case("false", "false")]
+    fn term(#[case] input: &str, #[case] expected: &str) {
+        expression_test(input, expected)
+    }
+
     // Prefix operators
+    #[rstest]
     #[case("!true", "(!true)")]
     #[case("!false", "(!false)")]
     #[case("-5", "(-5)")]
+    fn prefix_operator(#[case] input: &str, #[case] expected: &str) {
+        expression_test(input, expected)
+    }
+
     // Infix operators
+    #[rstest]
     #[case("5 + 6", "(5 + 6)")]
     #[case("5 - 6", "(5 - 6)")]
     #[case("5 * 6", "(5 * 6)")]
@@ -421,8 +443,6 @@ mod tests {
     #[case("5 != 6", "(5 != 6)")]
     #[case("5 < 6", "(5 < 6)")]
     #[case("5 > 6", "(5 > 6)")]
-    #[case("5 <= 6", "(5 <= 6)")]
-    #[case("5 >= 6", "(5 >= 6)")]
     // Boolean and numeric operators
     #[case("3 < 5 == true", "((3 < 5) == true)")]
     // Operator associativity
@@ -434,31 +454,24 @@ mod tests {
     #[case("5 - 6 * 7 + 2", "((5 - (6 * 7)) + 2)")]
     #[case("1 + (2 + 3) + 4", "((1 + (2 + 3)) + 4)")]
     #[case("(5 + 5) * 2", "((5 + 5) * 2)")]
-    fn test_parse_expression(#[case] input: &str, #[case] expected: &str) {
-        let mut tokens = lexer::tokenize(input).unwrap();
-        let res = parse_expression(&mut tokens, Precedence::Lowest).unwrap();
-        dbg!(&res);
-        assert_eq!(&res.to_string(), expected);
+    fn infix_operator(#[case] input: &str, #[case] expected: &str) {
+        expression_test(input, expected)
     }
 
     #[rstest]
     #[case("if true { 5 + 5 };", "if true then { (5 + 5) } else N/A")]
     #[case("if x > y { x }", "if (x > y) then { x } else N/A")]
     #[case("if x > y { x } else { y }", "if (x > y) then { x } else { y }")]
-    fn test_if_expression(#[case] input: &str, #[case] expected: &str) {
-        let mut tokens = lexer::tokenize(input).unwrap();
-        let res = parse_expression(&mut tokens, Precedence::Lowest).unwrap();
-        assert_eq!(&res.to_string(), expected);
+    fn if_expression(#[case] input: &str, #[case] expected: &str) {
+        expression_test(input, expected)
     }
 
     #[rstest]
     #[case("fn() {true}", "fn() { true }")]
     #[case("fn(x) {x + 3}", "fn(x) { (x + 3) }")]
     #[case("fn(x, y) {x + y}", "fn(x, y) { (x + y) }")]
-    fn test_function_expression(#[case] input: &str, #[case] expected: &str) {
-        let mut tokens = lexer::tokenize(input).unwrap();
-        let res = parse_expression(&mut tokens, Precedence::Lowest).unwrap();
-        assert_eq!(&res.to_string(), expected);
+    fn function_expression(#[case] input: &str, #[case] expected: &str) {
+        expression_test(input, expected)
     }
 
     #[rstest]
@@ -466,9 +479,7 @@ mod tests {
     #[case("add(1 + 2, 3)", "add((1 + 2), 3)")]
     #[case("add(x, y)", "add(x, y)")]
     #[case("fn(x,y) { x + y }(1,2)", "fn(x, y) { (x + y) }(1, 2)")]
-    fn test_call_expression(#[case] input: &str, #[case] expected: &str) {
-        let mut tokens = lexer::tokenize(input).unwrap();
-        let res = parse_expression(&mut tokens, Precedence::Lowest).unwrap();
-        assert_eq!(&res.to_string(), expected);
+    fn call_expression(#[case] input: &str, #[case] expected: &str) {
+        expression_test(input, expected)
     }
 }

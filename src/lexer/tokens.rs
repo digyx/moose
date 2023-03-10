@@ -36,8 +36,6 @@ pub enum Token {
     NotEqual,
     LessThan,
     GreaterThan,
-    LessThanEqual,
-    GreaterThanEqual,
 
     // Delimiters
     Comma,
@@ -130,8 +128,6 @@ pub enum InfixOperator {
     NotEqual,
     LessThan,
     GreaterThan,
-    LessThanEqual,
-    GreaterThanEqual,
 
     Call,
 }
@@ -155,9 +151,7 @@ impl TryFrom<&Token> for InfixOperator {
             Token::Equal => Self::Equal,
             Token::NotEqual => Self::NotEqual,
             Token::LessThan => Self::LessThan,
-            Token::LessThanEqual => Self::LessThanEqual,
             Token::GreaterThan => Self::GreaterThan,
-            Token::GreaterThanEqual => Self::GreaterThanEqual,
 
             Token::LeftParenthesis => Self::Call,
 

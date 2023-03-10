@@ -8,6 +8,10 @@ impl Program {
     pub fn new(vec: Vec<Node>) -> Program {
         Program(vec)
     }
+
+    pub fn program(self) -> Vec<Node> {
+        self.0
+    }
 }
 
 impl Display for Program {
@@ -18,14 +22,14 @@ impl Display for Program {
             self.0
                 .iter()
                 .map(|stmt| stmt.to_string())
-                .collect::<Vec<String>>()
-                .join("\n")
+                .reduce(|acc, elem| acc + "\n" + &elem)
+                .unwrap_or(String::new())
         )
     }
 }
 
 // Statements
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Node {
     Let(String, Expression),
     Return(Expression),
@@ -43,8 +47,8 @@ impl Display for Node {
                 "{{ {} }}",
                 vec.iter()
                     .map(|node| node.to_string())
-                    .collect::<Vec<String>>()
-                    .join("\n")
+                    .reduce(|acc, elem| acc + "\n" + &elem)
+                    .unwrap_or(String::new())
             ),
             Node::Expression(val) => write!(f, "{}", val),
         }
@@ -52,7 +56,7 @@ impl Display for Node {
 }
 
 // Expressions
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expression {
     Identifier(String),
 
@@ -74,8 +78,6 @@ pub enum Expression {
     NotEqual(Box<Expression>, Box<Expression>),
     LessThan(Box<Expression>, Box<Expression>),
     GreaterThan(Box<Expression>, Box<Expression>),
-    LessThanEqual(Box<Expression>, Box<Expression>),
-    GreaterThanEqual(Box<Expression>, Box<Expression>),
 
     If {
         condition: Box<Expression>,
@@ -103,9 +105,7 @@ impl Expression {
             | Expression::Equal(_, _)
             | Expression::NotEqual(_, _)
             | Expression::LessThan(_, _)
-            | Expression::GreaterThan(_, _)
-            | Expression::LessThanEqual(_, _)
-            | Expression::GreaterThanEqual(_, _) => true,
+            | Expression::GreaterThan(_, _) => true,
             _ => false,
         }
     }
@@ -143,8 +143,6 @@ impl Display for Expression {
             Expression::NotEqual(rhs, lhs) => write!(f, "({} != {})", rhs, lhs),
             Expression::LessThan(rhs, lhs) => write!(f, "({} < {})", rhs, lhs),
             Expression::GreaterThan(rhs, lhs) => write!(f, "({} > {})", rhs, lhs),
-            Expression::LessThanEqual(rhs, lhs) => write!(f, "({} <= {})", rhs, lhs),
-            Expression::GreaterThanEqual(rhs, lhs) => write!(f, "({} >= {})", rhs, lhs),
 
             Expression::If {
                 condition,
@@ -171,8 +169,8 @@ impl Display for Expression {
                 function,
                 args.iter()
                     .map(|expr| expr.to_string())
-                    .collect::<Vec<String>>()
-                    .join(", ")
+                    .reduce(|acc, elem| acc + ", " + &elem)
+                    .unwrap_or(String::new())
             ),
         }
     }

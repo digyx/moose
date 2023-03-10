@@ -18,8 +18,6 @@ pub(super) fn get_prescedence(tok: &InfixOperator) -> Precedence {
 
         InfixOperator::LessThan => Precedence::Ordering,
         InfixOperator::GreaterThan => Precedence::Ordering,
-        InfixOperator::LessThanEqual => Precedence::Ordering,
-        InfixOperator::GreaterThanEqual => Precedence::Ordering,
 
         InfixOperator::Plus => Precedence::Sum,
         InfixOperator::Minus => Precedence::Sum,

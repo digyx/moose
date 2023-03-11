@@ -1,7 +1,7 @@
 use std::iter::Peekable;
 use std::vec::IntoIter;
 
-use super::LexerError;
+use anyhow::{bail, Result};
 
 pub type Tokens = Peekable<IntoIter<Token>>;
 
@@ -48,6 +48,38 @@ pub enum Token {
     RightBrace,
 }
 
+impl std::fmt::Display for Token {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Token::Assign => write!(f, "="),
+            Token::Function => write!(f, "fn"),
+            Token::Let => write!(f, "let"),
+            Token::If => write!(f, "if"),
+            Token::Else => write!(f, "else"),
+            Token::Return => write!(f, "return"),
+            Token::Ident(tok) => write!(f, "{}", tok),
+            Token::Int(tok) => write!(f, "{}", tok),
+            Token::True => write!(f, "true"),
+            Token::False => write!(f, "false"),
+            Token::Bang => write!(f, "!"),
+            Token::Plus => write!(f, "+"),
+            Token::Minus => write!(f, "-"),
+            Token::Asterisk => write!(f, "*"),
+            Token::ForwardSlash => write!(f, "/"),
+            Token::Equal => write!(f, "="),
+            Token::NotEqual => write!(f, "!="),
+            Token::LessThan => write!(f, "<"),
+            Token::GreaterThan => write!(f, ">"),
+            Token::Comma => write!(f, ","),
+            Token::Semicolon => write!(f, ";"),
+            Token::LeftParenthesis => write!(f, "("),
+            Token::RightParenthesis => write!(f, ")"),
+            Token::LeftBrace => write!(f, "{{"),
+            Token::RightBrace => write!(f, "}}"),
+        }
+    }
+}
+
 // ==================== Token Types ====================
 // Terms
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -68,16 +100,16 @@ impl Term {
 }
 
 impl TryFrom<Token> for Term {
-    type Error = LexerError;
+    type Error = anyhow::Error;
 
-    fn try_from(token: Token) -> Result<Self, Self::Error> {
+    fn try_from(token: Token) -> Result<Self> {
         let term = match token {
             Token::Ident(val) => Term::Ident(val),
             Token::Int(val) => Term::Int(val),
             Token::True => Term::True,
             Token::False => Term::False,
 
-            _ => return Err(LexerError::InvalidToken),
+            tok => bail!("invalid token: {} is not a term", tok),
         };
 
         Ok(term)
@@ -94,16 +126,16 @@ pub enum PrefixOperator {
 }
 
 impl TryFrom<&Token> for PrefixOperator {
-    type Error = LexerError;
+    type Error = anyhow::Error;
 
-    fn try_from(token: &Token) -> Result<Self, Self::Error> {
+    fn try_from(token: &Token) -> Result<Self> {
         let term = match token {
             Token::Bang => Self::Bang,
             Token::Minus => Self::Minus,
             Token::If => Self::If,
             Token::Function => Self::Function,
 
-            _ => return Err(LexerError::InvalidToken),
+            tok => bail!("invalid token: {} is not a prefix operator", tok),
         };
 
         Ok(term)
@@ -139,9 +171,9 @@ impl InfixOperator {
 }
 
 impl TryFrom<&Token> for InfixOperator {
-    type Error = LexerError;
+    type Error = anyhow::Error;
 
-    fn try_from(token: &Token) -> Result<Self, Self::Error> {
+    fn try_from(token: &Token) -> Result<Self> {
         let term = match token {
             Token::Plus => Self::Plus,
             Token::Minus => Self::Minus,
@@ -155,7 +187,7 @@ impl TryFrom<&Token> for InfixOperator {
 
             Token::LeftParenthesis => Self::Call,
 
-            _ => return Err(LexerError::InvalidToken),
+            tok => bail!("invalid token: {} is not an infix operator", tok),
         };
 
         Ok(term)
@@ -176,14 +208,14 @@ impl Keyword {
 }
 
 impl TryFrom<&Token> for Keyword {
-    type Error = LexerError;
+    type Error = anyhow::Error;
 
-    fn try_from(token: &Token) -> Result<Self, Self::Error> {
+    fn try_from(token: &Token) -> Result<Self> {
         let term = match token {
             Token::Let => Self::Let,
             Token::Return => Self::Return,
 
-            _ => return Err(LexerError::InvalidToken),
+            tok => bail!("invalid token: {} is not a keyword", tok),
         };
 
         Ok(term)

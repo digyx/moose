@@ -1,12 +1,12 @@
-mod error;
 mod tokens;
 
 use std::{iter::Peekable, str::Chars};
 
-pub use error::LexerError;
+use anyhow::{bail, Result};
+
 pub use tokens::{InfixOperator, Keyword, PrefixOperator, Term, Token, Tokens};
 
-pub fn tokenize(input: &str) -> Result<Tokens, LexerError> {
+pub fn tokenize(input: &str) -> Result<Tokens> {
     let mut input = input.chars().into_iter().peekable();
 
     let mut tokens = Vec::new();
@@ -17,7 +17,7 @@ pub fn tokenize(input: &str) -> Result<Tokens, LexerError> {
     Ok(tokens.into_iter().peekable())
 }
 
-fn next_token(input: &mut Peekable<Chars>) -> Result<Option<Token>, LexerError> {
+fn next_token(input: &mut Peekable<Chars>) -> Result<Option<Token>> {
     let tok = match input.next() {
         Some(tok) => tok,
         None => return Ok(None),
@@ -70,7 +70,7 @@ fn next_token(input: &mut Peekable<Chars>) -> Result<Option<Token>, LexerError> 
             None => return Ok(None),
         },
 
-        _ => return Err(LexerError::IllegalToken),
+        _ => bail!("illegal token"),
     };
 
     Ok(Some(tok))
